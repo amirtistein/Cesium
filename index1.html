@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <script src="https://cesium.com/downloads/cesiumjs/releases/1.80/Build/Cesium/Cesium.js"></script>
+  <link href="https://cesium.com/downloads/cesiumjs/releases/1.80/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+  <style>
+    html, body, #cesiumContainer {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+    }
+    #cesiumContainer {
+      position: absolute;
+      top: 0;
+      left: 0;
+    }
+  </style>
+</head>
+<body>
+  <div id="cesiumContainer"></div>
+  <script>
+    Cesium.Ion.defaultAccessToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiIyNWQ2YzFiYi03MmYzLTQxZmQtOWI0ZS03N2Q1YzU3YmQyZDYiLCJpZCI6MjY1NDIwLCJpYXQiOjE3MzU0ODU4MjZ9.ap6TXrPfcizNxop9Mgbq5jQnMaorAHdbsIVCD7mHUA8"; 
+
+    var viewer = new Cesium.Viewer('cesiumContainer', {
+      baseLayerPicker: true,
+      vrButton: true,
+      geocoder: false,
+      navigationHelpButton: false,
+      selectionIndicator: false,
+      shadows: true,
+      timeline: false,
+      sceneModePicker: true,
+    });
+
+    var tileset = viewer.scene.primitives.add(new Cesium.Cesium3DTileset({
+      url: "http://127.0.0.1:8006/tileset.json"
+    }));
+
+    // Apply a height offset to position the model on the ground
+    var heightOffset = 0; // Adjust this value if necessary
+    tileset.readyPromise.then(function(tileset) {
+      var boundingSphere = tileset.boundingSphere;
+      var cartographic = Cesium.Cartographic.fromCartesian(boundingSphere.center);
+      var surfacePosition = Cesium.Cartesian3.fromRadians(cartographic.longitude, cartographic.latitude, cartographic.height - heightOffset);
+      var translation = Cesium.Cartesian3.subtract(boundingSphere.center, surfacePosition, new Cesium.Cartesian3());
+      tileset.modelMatrix = Cesium.Matrix4.fromTranslation(translation);
+      viewer.flyTo(tileset);
+    });
+
+    // Event handler for picking and highlighting buildings
+    var handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+    var previousFeature;
+    handler.setInputAction(function (movement) {
+      var pickedFeature = viewer.scene.pick(movement.position);
+      if (Cesium.defined(pickedFeature)) {
+        if (previousFeature) {
+          // Reset the previous feature's color
+          previousFeature.color = previousFeature.originalColor;
+        }
+        // Store the original color
+        pickedFeature.originalColor = pickedFeature.color.clone();
+        // Change the color of the picked feature
+        pickedFeature.color = Cesium.Color.YELLOW;
+
+        // Store the picked feature to reset its color later
+        previousFeature = pickedFeature;
+
+        // Get the picked position in Cartesian3 coordinates
+        var cartesian = viewer.scene.pickPosition(movement.position);
+        if (Cesium.defined(cartesian)) {
+          // Convert Cartesian3 to Cartographic coordinates
+          var cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+          var latitude = Cesium.Math.toDegrees(cartographic.latitude);
+          var longitude = Cesium.Math.toDegrees(cartographic.longitude);
+          var height = cartographic.height;
+          
+          alert('Coordinates: \nLatitude: ' + latitude.toFixed(6) + '\nLongitude: ' + longitude.toFixed(6) + '\nHeight: ' + height.toFixed(2));
+        } else {
+          alert('No position picked');
+        }
+      } else {
+        alert('No feature picked');
+      }
+    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+    // Drawing capabilities: Lines, Polygons, or Points
+var drawingMode = 'line'; // Set to 'line', 'polygon', or 'point' based on your needs
+var activeShapePoints = [];
+var activeShape;
+var handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+
+// Function to create shape
+function drawShape(positionData) {
+    if (drawingMode === 'polygon') {
+        return viewer.entities.add({
+            polygon: {
+                hierarchy: positionData,
+                material: Cesium.Color.BLUE.withAlpha(0.5),
+            },
+        });
+    } else if (drawingMode === 'line') {
+        return viewer.entities.add({
+            polyline: {
+                positions: positionData,
+                width: 3,
+                material: Cesium.Color.RED,
+            },
+        });
+    }
+}
+
+// Start drawing on left click
+handler.setInputAction(function (event) {
+    var earthPosition = viewer.scene.pickPosition(event.position);
+    if (Cesium.defined(earthPosition)) {
+        if (activeShapePoints.length === 0) {
+            activeShapePoints.push(earthPosition);
+            var dynamicPositions = new Cesium.CallbackProperty(function () {
+                return drawingMode === 'polygon'
+                    ? new Cesium.PolygonHierarchy(activeShapePoints)
+                    : activeShapePoints;
+            }, false);
+            activeShape = drawShape(dynamicPositions);
+        }
+        activeShapePoints.push(earthPosition);
+    }
+}, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+// Finish drawing on right click
+handler.setInputAction(function () {
+    activeShapePoints.pop(); // Remove temporary last point
+    drawShape(activeShapePoints);
+    viewer.entities.remove(activeShape);
+    activeShape = undefined;
+    activeShapePoints = [];
+}, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+
+  </script>
+</body>
+</html>
